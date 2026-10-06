@@ -128,17 +128,18 @@ Train и test не пересекаются по текстам. Новыми п
 
 - `starter/runtime/`: загрузка замороженной rubert-tiny2 с проверкой SHA-256 весов,
   проверки размера адаптера и числа параметров;
-- `starter/assets/`: веса модели и токенизатор;
+- `starter/assets/model/`: веса модели и токенизатор, скачиваются скриптом `./download_model.sh`;
 - `task_config.json`: ограничения задачи, которые читает runtime;
 - `starter/solution/__init__.py` и `data.py`: чтение эпизодов и запись предсказаний.
 
 Их нужно положить в корень репозитория. Все они перечислены в `.gitignore`
 и в коммит не попадут.
 
-1. Установите окружение (Python 3.10+):
+1. Установите окружение (Python 3.10+) и скачайте модель:
 
    ```bash
    python -m venv .venv && .venv/bin/pip install -r requirements.txt
+   ./download_model.sh
    ```
 
 2. Обучение и предсказание:
@@ -161,6 +162,7 @@ Train и test не пересекаются по текстам. Новыми п
 ## Структура
 
 ```
+download_model.sh   загрузка rubert-tiny2 с Hugging Face с проверкой SHA-256
 starter/solution/
   features.py   замороженные признаки: CLS + среднее по токенам со всех уровней
   model.py      ParticipantModule (переключатель) и совместное декодирование
@@ -178,5 +180,6 @@ dev/
 ## Что не входит в репозиторий
 
 - **Веса rubert-tiny2**: 113 МБ, больше лимита GitHub. Модель доступна на Hugging Face
-  под лицензией MIT; код рассчитан на ревизию `e8ed3b0c8bbf4fb6984c3de043bf7d2f4e5969ae`.
+  под лицензией MIT; `download_model.sh` скачивает ревизию
+  `e8ed3b0c8bbf4fb6984c3de043bf7d2f4e5969ae` и проверяет SHA-256 каждого файла.
 - **Корпус A**: детерминированно пересобирается `dev/make_proxy_a.py`.
