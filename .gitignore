@@ -1,0 +1,20 @@
+# Окружение и артефакты запусков
+.venv
+__pycache__/
+*.pyc
+runs/
+*.safetensors
+*.zip
+*:Zone.Identifier
+
+PACKAGE_MANIFEST.json
+task_config.json
+examples/
+starter/assets/
+starter/runtime/
+starter/tests/
+starter/solution/__init__.py
+starter/solution/data.py
+
+# Шаблонный прокси-корпус детерминированно пересобирается dev/make_proxy_a.py
+dev/proxy_a/

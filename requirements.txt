@@ -1,0 +1,9 @@
+torch==2.7.1
+transformers==4.53.2
+tokenizers==0.21.2
+safetensors==0.5.3
+huggingface-hub==0.33.4
+numpy==2.2.6
+psutil==7.0.0
+pytest==8.4.1
+certifi==2026.7.22
