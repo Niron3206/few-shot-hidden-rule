@@ -1,6 +1,6 @@
 """Build episodic JSONL splits from the proxy corpora.
 
-Every split is written twice: as episode JSONL (what ``starter.solution`` reads)
+Every split is written twice: as episode JSONL (what ``hidden_rule`` reads)
 and as a compact index file used by the research harness.  Phrase pools of the
 train and test splits are disjoint; ``test_unseen`` additionally uses only
 rules whose attribute family never appears as a rule in train.

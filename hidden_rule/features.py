@@ -6,14 +6,14 @@ from typing import Sequence
 
 import torch
 
-from starter.runtime.backbone import FrozenBackbone
+from hidden_rule.backbone import Backbone
 
 MAX_LENGTH = 58
 
 
 @torch.no_grad()
 def encode_texts(
-    backbone: FrozenBackbone,
+    backbone: Backbone,
     texts: Sequence[str],
     *,
     batch_size: int = 128,
@@ -22,7 +22,7 @@ def encode_texts(
 
     For the embedding output and every Transformer layer the CLS state and the
     masked mean over real tokens are concatenated.  Texts are truncated to the
-    58-token runtime limit, encoded once each, and batched by length so padding
+    58-token limit, encoded once each, and batched by length so padding
     stays small on CPU.
     """
 
@@ -34,7 +34,7 @@ def encode_texts(
     order = torch.argsort(lengths, stable=True).tolist()
     features: torch.Tensor | None = None
     batch_size = max(1, int(batch_size))
-    backbone.eval()
+    backbone.model.eval()
     for start in range(0, len(order), batch_size):
         rows = order[start : start + batch_size]
         width = int(lengths[rows].max())
@@ -44,7 +44,7 @@ def encode_texts(
             sequence = sequences[index]
             input_ids[row, : len(sequence)] = torch.tensor(sequence, dtype=torch.long)
             attention_mask[row, : len(sequence)] = 1
-        output = backbone(
+        output = backbone.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=torch.zeros_like(input_ids),

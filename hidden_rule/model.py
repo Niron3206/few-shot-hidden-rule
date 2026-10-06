@@ -13,7 +13,7 @@ SUPPORT_SIZE = 8
 QUERY_COUNT = 4
 
 
-class ParticipantModule(nn.Module):
+class EpisodeClassifier(nn.Module):
     """Score queries against the labelled support set of their own episode.
 
     Frozen sentence features are standardized and projected to a small space.
@@ -27,14 +27,13 @@ class ParticipantModule(nn.Module):
 
     def __init__(
         self,
-        hidden_size: int = 312,
+        input_dim: int,
         *,
-        input_dim: int | None = None,
         projection_dim: int = 48,
         dropout: float = 0.4,
     ) -> None:
         super().__init__()
-        input_dim = int(hidden_size if input_dim is None else input_dim)
+        input_dim = int(input_dim)
         self.input_dim = input_dim
         self.register_buffer("feature_mean", torch.zeros(input_dim))
         self.register_buffer("feature_std", torch.ones(input_dim))
@@ -49,11 +48,11 @@ class ParticipantModule(nn.Module):
         self.bias = nn.Parameter(torch.zeros(()))
 
     @classmethod
-    def from_state_dict(cls, state: Mapping[str, torch.Tensor]) -> ParticipantModule:
+    def from_state_dict(cls, state: Mapping[str, torch.Tensor]) -> EpisodeClassifier:
         """Rebuild the module with dimensions inferred from a saved adapter."""
 
         weight = state["projection.weight"]
-        module = cls(input_dim=int(weight.shape[1]), projection_dim=int(weight.shape[0]))
+        module = cls(int(weight.shape[1]), projection_dim=int(weight.shape[0]))
         module.load_state_dict(dict(state), strict=True)
         return module
 
@@ -68,21 +67,18 @@ class ParticipantModule(nn.Module):
     def forward(
         self,
         query_embeddings: torch.Tensor,
-        support_embeddings: torch.Tensor | None = None,
-        support_labels: torch.Tensor | None = None,
+        support_embeddings: torch.Tensor,
+        support_labels: torch.Tensor,
     ) -> torch.Tensor:
         """Return logits ``[batch, queries]``.
 
         ``query_embeddings`` is ``[batch, queries, input_dim]``;
         ``support_embeddings`` is ``[batch, support, input_dim]`` with binary
-        ``support_labels`` ``[batch, support]``.  Without a support set no rule
-        is observable, so the logits are uninformative zeros.
+        ``support_labels`` ``[batch, support]``.
         """
 
-        if query_embeddings.ndim != 3:
-            raise ValueError("query_embeddings must have shape [batch, queries, hidden]")
-        if support_embeddings is None or support_labels is None:
-            return query_embeddings.new_zeros(query_embeddings.shape[:2])
+        if query_embeddings.ndim != 3 or support_embeddings.ndim != 3:
+            raise ValueError("embeddings must have shape [batch, items, input_dim]")
         queries = self.embed(query_embeddings)
         support = self.embed(support_embeddings)
         labels = support_labels.to(support.dtype).unsqueeze(-1)

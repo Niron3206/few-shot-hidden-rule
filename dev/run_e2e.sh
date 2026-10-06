@@ -8,11 +8,11 @@ export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1
 TAG=$1; shift
 D=runs/proxy/$TAG
 PY=.venv/bin/python
-/usr/bin/time -f "train: %e s, maxrss %M KB" $PY -m starter.solution.train \
+/usr/bin/time -f "train: %e s, maxrss %M KB" $PY -m hidden_rule.train \
   --train "$D/train.jsonl" --adapter "$D/adapter.safetensors" "$@" > "$D/train_report.json"
 grep -E '"(steps|encode_seconds|train_seconds|adapter_scalars)"' "$D/train_report.json" | tr -d '\n'; echo
 for split in test_seen test_unseen; do
-  /usr/bin/time -f "predict $split: %e s, maxrss %M KB" $PY -m starter.solution.predict \
+  /usr/bin/time -f "predict $split: %e s, maxrss %M KB" $PY -m hidden_rule.predict \
     --data "$D/$split.jsonl" --adapter "$D/adapter.safetensors" --output "$D/$split.pred.jsonl" > /dev/null
   $PY dev/evaluate.py "$D/$split.jsonl" "$D/$split.labels.jsonl" "$D/$split.pred.jsonl"
 done

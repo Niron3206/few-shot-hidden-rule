@@ -32,11 +32,10 @@ import torch
 import torch.nn.functional as F
 from safetensors.torch import save_file
 
-from starter.runtime.backbone import FrozenBackbone
-from starter.runtime.meta import validate_artifact, validate_trainable_parameter_count
-from starter.solution.data import Episode, read_episodes
-from starter.solution.features import encode_texts, unique_texts
-from starter.solution.model import ParticipantModule
+from hidden_rule.backbone import Backbone
+from hidden_rule.data import Episode, read_episodes
+from hidden_rule.features import encode_texts, unique_texts
+from hidden_rule.model import EpisodeClassifier
 
 MIN_BATCH_EPISODES = 64
 MIN_STEPS = 6000
@@ -45,6 +44,8 @@ MAX_TRAIN_SECONDS = 12 * 60
 PSEUDO_FRACTION = 0.2
 FLIP_PROBABILITY = 0.5
 WEIGHT_DECAY = 0.01
+MAX_TRAINABLE_PARAMETERS = 150_000
+MAX_ADAPTER_BYTES = 2 * 1024 * 1024
 
 
 def episode_tensors(episodes: Sequence[Episode]) -> tuple[list[str], dict[str, torch.Tensor]]:
@@ -126,15 +127,18 @@ def count_log_prior(labels: torch.Tensor) -> torch.Tensor:
     return torch.log((counts + 0.5) / (counts.sum() + 2.5)).float()
 
 
-def save_adapter(model: ParticipantModule, path: str | Path) -> Path:
+def save_adapter(model: EpisodeClassifier, path: str | Path) -> tuple[int, int]:
+    """Save the adapter and return its size in bytes and tensor scalars."""
+
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    save_file(
-        {name: tensor.detach().cpu().contiguous() for name, tensor in model.state_dict().items()},
-        str(output),
-    )
-    validate_artifact(output)
-    return output
+    state = {name: tensor.detach().cpu().contiguous() for name, tensor in model.state_dict().items()}
+    save_file(state, str(output))
+    size = output.stat().st_size
+    scalars = sum(tensor.numel() for tensor in state.values())
+    if size > MAX_ADAPTER_BYTES or scalars > MAX_TRAINABLE_PARAMETERS:
+        raise RuntimeError(f"adapter exceeds limits: {size} bytes, {scalars} scalars")
+    return size, scalars
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -146,6 +150,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--max-episodes", type=int)
+    parser.add_argument("--model-dir", type=Path, help="local rubert-tiny2 directory (default: assets/model)")
+    parser.add_argument("--threads", type=int, default=2)
     return parser
 
 
@@ -156,13 +162,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not math.isfinite(args.learning_rate) or args.learning_rate <= 0:
         raise SystemExit("learning-rate must be a positive finite number")
     started = time.perf_counter()
-    torch.set_num_threads(2)
+    torch.set_num_threads(max(1, args.threads))
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     generator = torch.Generator().manual_seed(args.seed)
 
-    backbone = FrozenBackbone()
+    backbone = Backbone(args.model_dir)
     episodes = read_episodes(args.train, require_query_labels=True)
     if args.max_episodes:
         episodes = episodes[: args.max_episodes]
@@ -174,10 +180,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     encode_seconds = time.perf_counter() - encode_started
     del backbone
 
-    model = ParticipantModule(input_dim=features.shape[1])
+    model = EpisodeClassifier(features.shape[1])
     model.set_feature_stats(features)
     model.count_log_prior.copy_(count_log_prior(labels))
-    trainable = validate_trainable_parameter_count(model)
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    if trainable > MAX_TRAINABLE_PARAMETERS:
+        raise RuntimeError(f"too many trainable parameters: {trainable}")
 
     lexical = LexicalRules(texts, generator)
     episode_count = len(episodes)
@@ -220,8 +228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     train_seconds = time.perf_counter() - train_started
 
     model.eval()
-    save_adapter(model, args.adapter)
-    artifact = validate_artifact(args.adapter)
+    adapter_bytes, adapter_scalars = save_adapter(model, args.adapter)
     print(
         json.dumps(
             {
@@ -237,8 +244,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "train_seconds": round(train_seconds, 2),
                 "total_seconds": round(time.perf_counter() - started, 2),
                 "trainable_parameters": trainable,
-                "adapter_bytes": artifact.size_bytes,
-                "adapter_scalars": artifact.scalar_count,
+                "adapter_bytes": adapter_bytes,
+                "adapter_scalars": adapter_scalars,
                 "query_count_prior": model.count_log_prior.exp().tolist(),
             },
             ensure_ascii=False,

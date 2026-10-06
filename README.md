@@ -124,33 +124,38 @@ Train и test не пересекаются по текстам. Новыми п
 
 ## Как запустить
 
-Код опирается на внешние файлы, которых нет в репозитории:
-
-- `starter/runtime/`: загрузка замороженной rubert-tiny2 с проверкой SHA-256 весов,
-  проверки размера адаптера и числа параметров;
-- `starter/assets/model/`: веса модели и токенизатор, скачиваются скриптом `./download_model.sh`;
-- `task_config.json`: ограничения задачи, которые читает runtime;
-- `starter/solution/__init__.py` и `data.py`: чтение эпизодов и запись предсказаний.
-
-Их нужно положить в корень репозитория. Все они перечислены в `.gitignore`
-и в коммит не попадут.
-
-1. Установите окружение (Python 3.10+) и скачайте модель:
+1. Окружение (Python 3.10+) и модель:
 
    ```bash
-   python -m venv .venv && .venv/bin/pip install -r requirements.txt
-   ./download_model.sh
+   python -m venv .venv
+   .venv/bin/pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu  # CPU-сборка, без CUDA
+   .venv/bin/pip install -r requirements.txt
+   ./download_model.sh   # rubert-tiny2 в assets/model, около 113 МБ
    ```
 
-2. Обучение и предсказание:
+2. Быстрый старт на прокси-корпусе B, он лежит в репозитории:
 
    ```bash
-   export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1
-   .venv/bin/python -m starter.solution.train --train train.jsonl --adapter runs/adapter.safetensors
-   .venv/bin/python -m starter.solution.predict --data test.jsonl --adapter runs/adapter.safetensors --output runs/predictions.jsonl
+   .venv/bin/python dev/episodes.py --corpus b --query-mode balanced   # эпизоды в runs/proxy/b_balanced
+   .venv/bin/python -m hidden_rule.train --train runs/proxy/b_balanced/train.jsonl --adapter runs/adapter.safetensors
+   .venv/bin/python -m hidden_rule.predict --data runs/proxy/b_balanced/test_seen.jsonl \
+       --adapter runs/adapter.safetensors --output runs/predictions.jsonl
+   .venv/bin/python dev/evaluate.py runs/proxy/b_balanced/test_seen.jsonl \
+       runs/proxy/b_balanced/test_seen.labels.jsonl runs/predictions.jsonl
    ```
 
-3. Эксперименты на прокси-данных:
+   Свои данные подаются так же: `--train` и `--data` принимают JSONL в формате
+   из раздела "Задача". Дополнительные параметры обучения: `--epochs`,
+   `--batch-size`, `--learning-rate`, `--seed`, `--max-episodes`; у обеих команд
+   есть `--model-dir` (по умолчанию `assets/model`) и `--threads` (по умолчанию 2).
+
+3. Тесты (не требуют модели):
+
+   ```bash
+   .venv/bin/python -m pytest -q tests
+   ```
+
+4. Эксперименты на прокси-данных:
 
    ```bash
    .venv/bin/python dev/make_proxy_a.py                         # корпус A
@@ -163,11 +168,14 @@ Train и test не пересекаются по текстам. Новыми п
 
 ```
 download_model.sh   загрузка rubert-tiny2 с Hugging Face с проверкой SHA-256
-starter/solution/
+hidden_rule/
+  backbone.py   замороженная rubert-tiny2 из локальной папки
+  data.py       чтение эпизодов с проверкой формата, запись предсказаний
   features.py   замороженные признаки: CLS + среднее по токенам со всех уровней
-  model.py      ParticipantModule (переключатель) и совместное декодирование
+  model.py      EpisodeClassifier (переключатель) и совместное декодирование
   train.py      кэширование признаков и мета-обучение
   predict.py    только инференс
+tests/          быстрые тесты формата данных и модели
 dev/
   make_proxy_a.py, make_proxy_b_specs.py, merge_proxy_b.py   прокси-корпуса
   proxy_b/      спецификации, тексты (gen_*), слепая переразметка (ver_*), корпус

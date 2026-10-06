@@ -2,14 +2,14 @@
 # Скачивает замороженную rubert-tiny2 (веса и токенизатор) с Hugging Face на
 # закреплённой ревизии и проверяет SHA-256 каждого файла.
 #
-# Использование: ./download_model.sh [папка]   (по умолчанию starter/assets/model)
+# Использование: ./download_model.sh [папка]   (по умолчанию assets/model)
 # Зеркало можно задать через HF_ENDPOINT, например HF_ENDPOINT=https://hf-mirror.com
 set -euo pipefail
 
 REPO="cointegrated/rubert-tiny2"
 REVISION="e8ed3b0c8bbf4fb6984c3de043bf7d2f4e5969ae"
 ENDPOINT="${HF_ENDPOINT:-https://huggingface.co}"
-DEST="${1:-starter/assets/model}"
+DEST="${1:-$(cd "$(dirname "$0")" && pwd)/assets/model}"
 
 FILES=(
   "config.json adee8b3e344bcb8379f44d0b3577c267d52881341e05d973c43e49974778dfff"

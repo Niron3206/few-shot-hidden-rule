@@ -21,7 +21,7 @@ ROOT = DEV.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(DEV))
 
-from starter.runtime.backbone import FrozenBackbone  # noqa: E402
+from hidden_rule.backbone import Backbone  # noqa: E402
 from episodes import load_corpus  # noqa: E402
 
 
@@ -34,7 +34,7 @@ def build(corpus: str) -> dict:
     torch.set_num_threads(2)
     rows = load_corpus(corpus)
     texts = [row["text"] for row in rows]
-    backbone = FrozenBackbone()
+    backbone = Backbone()
     encoded = backbone.tokenizer(texts, truncation=True, max_length=58)
     lengths = torch.tensor([len(ids) for ids in encoded["input_ids"]])
     T = int(lengths.max())

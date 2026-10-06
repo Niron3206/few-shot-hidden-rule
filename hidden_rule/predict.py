@@ -1,4 +1,4 @@
-"""Generate predictions with the trained episodic adapter (inference only)."""
+"""Generate predictions with a trained episodic adapter (inference only)."""
 
 from __future__ import annotations
 
@@ -11,16 +11,10 @@ from typing import Sequence
 import torch
 from safetensors.torch import load_file
 
-from starter.runtime.backbone import FrozenBackbone
-from starter.runtime.meta import validate_artifact, verify_backbone_sha
-from starter.solution.data import (
-    iter_episode_batches,
-    prediction_rows,
-    read_episodes,
-    write_jsonl,
-)
-from starter.solution.features import encode_texts, unique_texts
-from starter.solution.model import ParticipantModule, joint_decode
+from hidden_rule.backbone import Backbone
+from hidden_rule.data import read_episodes, write_predictions
+from hidden_rule.features import encode_texts, unique_texts
+from hidden_rule.model import EpisodeClassifier, joint_decode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,18 +23,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--adapter", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--model-dir", type=Path, help="local rubert-tiny2 directory (default: assets/model)")
+    parser.add_argument("--threads", type=int, default=2)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    torch.set_num_threads(2)
-    verify_backbone_sha()
-    validate_artifact(args.adapter)
-    model = ParticipantModule.from_state_dict(load_file(str(args.adapter), device="cpu"))
+    torch.set_num_threads(max(1, args.threads))
+    model = EpisodeClassifier.from_state_dict(load_file(str(args.adapter), device="cpu"))
     model.eval()
 
-    backbone = FrozenBackbone()
+    backbone = Backbone(args.model_dir)
     episodes = read_episodes(args.data)
     support_labels = torch.tensor(
         [[item.label for item in episode.support] for episode in episodes], dtype=torch.long
@@ -54,16 +48,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         features = encode_texts(backbone, texts)
         encode_seconds = time.perf_counter() - encode_started
         probabilities: list[torch.Tensor] = []
-        for rows in iter_episode_batches(len(episodes), max(1, args.batch_size), shuffle=False):
-            logits = model(
-                features[index[rows, 8:]],
-                features[index[rows, :8]],
-                support_labels[rows],
-            )
+        batch_size = max(1, args.batch_size)
+        for start in range(0, len(episodes), batch_size):
+            rows = torch.arange(start, min(start + batch_size, len(episodes)))
+            logits = model(features[index[rows, 8:]], features[index[rows, :8]], support_labels[rows])
             _, marginals = joint_decode(logits, model.count_log_prior)
             probabilities.append(marginals.cpu())
-    output_probabilities = torch.cat(probabilities).double()
-    write_jsonl(prediction_rows(episodes, output_probabilities), args.output)
+    write_predictions(episodes, torch.cat(probabilities).double(), args.output)
     print(
         json.dumps(
             {
